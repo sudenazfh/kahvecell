@@ -1,14 +1,19 @@
-"""One-time demo data: 3 plans, 5 Ankara shops with menus, 1 test user with a Starter subscription.
+"""Demo data: 3 plans, 5 Ankara shops with menus, and customer / shop owner / admin test accounts.
+Safe to re-run: anything that already exists is skipped.
 
 Run from the backend folder:  .venv\\Scripts\\python.exe seed.py
 """
 
 from datetime import datetime, time, timedelta, timezone
 
-from app.database import Base, SessionLocal, engine
-from app.models import Plan, PlanType, Product, Shop, Subscription, User
+from sqlalchemy import select
 
-TEST_PHONE = "5551234567"
+from app.database import Base, SessionLocal, engine
+from app.models import Plan, PlanType, Product, Role, Shop, Subscription, User
+
+TEST_PHONE = "5551234567"   # customer
+OWNER_PHONE = "5550000001"  # shop owner of the first shop
+ADMIN_PHONE = "5550000000"  # admin
 
 PLANS = [
     Plan(type=PlanType.STARTER, name="Starter", price_kurus=8999, monthly_credits=10),
@@ -49,30 +54,46 @@ def seed() -> None:
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         if db.query(Plan).first():
-            print("Veri zaten var, hiçbir şey eklenmedi.")
-            return
+            print("Paketler ve dükkânlar zaten var, atlandı.")
+        else:
+            db.add_all(PLANS)
+            for name, address, lat, lng, opens, closes, rating, items in SHOPS:
+                shop = Shop(name=name, address=address, latitude=lat, longitude=lng,
+                            opens_at=opens, closes_at=closes, rating=rating)
+                shop.products = [
+                    Product(name=MENU[k][0], description=MENU[k][1], price_kurus=MENU[k][2] * 100)
+                    for k in items
+                ]
+                db.add(shop)
+            db.flush()
+            print(f"Eklendi: {len(PLANS)} paket, {len(SHOPS)} dükkân, "
+                  f"{sum(len(s[-1]) for s in SHOPS)} ürün.")
 
-        db.add_all(PLANS)
+        existing = set(db.scalars(select(User.phone_number)))
 
-        for name, address, lat, lng, opens, closes, rating, items in SHOPS:
-            shop = Shop(name=name, address=address, latitude=lat, longitude=lng,
-                        opens_at=opens, closes_at=closes, rating=rating)
-            shop.products = [
-                Product(name=MENU[k][0], description=MENU[k][1], price_kurus=MENU[k][2] * 100)
-                for k in items
-            ]
-            db.add(shop)
+        if TEST_PHONE not in existing:
+            user = User(phone_number=TEST_PHONE, full_name="Test Kullanıcı", email="test@kahvecell.local",
+                        preferences={"coffee": ["latte", "türk kahvesi"], "allergens": []})
+            now = datetime.now(timezone.utc)
+            user.subscriptions = [Subscription(plan_type=PlanType.STARTER, remaining_credits=10,
+                                               started_at=now, expires_at=now + timedelta(days=30))]
+            db.add(user)
+            print(f"Eklendi: müşteri {TEST_PHONE} (Starter abonelik).")
 
-        user = User(phone_number=TEST_PHONE, full_name="Test Kullanıcı", email="test@kahvecell.local",
-                    preferences={"coffee": ["latte", "türk kahvesi"], "allergens": []})
-        now = datetime.now(timezone.utc)
-        user.subscriptions = [Subscription(plan_type=PlanType.STARTER, remaining_credits=10,
-                                           started_at=now, expires_at=now + timedelta(days=30))]
-        db.add(user)
+        if OWNER_PHONE not in existing:
+            owner = User(phone_number=OWNER_PHONE, full_name="Dükkân Sahibi", role=Role.SHOP_OWNER)
+            db.add(owner)
+            first_shop = db.scalar(select(Shop).where(Shop.name == SHOPS[0][0]))
+            if first_shop is not None and first_shop.owner_id is None:
+                first_shop.owner = owner
+            print(f"Eklendi: dükkân sahibi {OWNER_PHONE} ({SHOPS[0][0]}).")
+
+        if ADMIN_PHONE not in existing:
+            db.add(User(phone_number=ADMIN_PHONE, full_name="Admin", role=Role.ADMIN))
+            print(f"Eklendi: admin {ADMIN_PHONE}.")
 
         db.commit()
-        print(f"Eklendi: {len(PLANS)} paket, {len(SHOPS)} dükkân, "
-              f"{sum(len(s[-1]) for s in SHOPS)} ürün, test kullanıcısı {TEST_PHONE} (OTP: 1234).")
+        print("Tüm hesaplarda OTP: 1234")
 
 
 if __name__ == "__main__":
