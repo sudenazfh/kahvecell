@@ -45,6 +45,18 @@ class OrderStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+# Which status an order may move to next. Anything not listed here is rejected.
+# Cancelling is allowed only before brewing starts, so a credit refund never wastes a made drink.
+ORDER_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.PENDING: {OrderStatus.ACCEPTED, OrderStatus.CANCELLED},
+    OrderStatus.ACCEPTED: {OrderStatus.PREPARING, OrderStatus.CANCELLED},
+    OrderStatus.PREPARING: {OrderStatus.READY},
+    OrderStatus.READY: {OrderStatus.DELIVERED},
+    OrderStatus.DELIVERED: set(),  # final
+    OrderStatus.CANCELLED: set(),  # final
+}
+
+
 class User(Base):
     __tablename__ = "users"
 
