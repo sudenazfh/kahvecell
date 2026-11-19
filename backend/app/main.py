@@ -11,6 +11,11 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    return {"message": "KahveCell API çalışıyor"}
+
+
 @app.get("/api/v1/health")
 def health():
     return {"success": True, "data": {"status": "ok"}, "error": None}
